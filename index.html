@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PneumoScan — AI Chest X-Ray Analysis</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0c0f; --surface: #111418; --border: #1e2328;
+      --accent: #00e5a0; --accent2: #0099ff; --danger: #ff4b6e;
+      --text: #e8eaed; --muted: #5a6072;
+      --mono: 'DM Mono', monospace; --serif: 'Instrument Serif', serif;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); overflow-x: hidden; }
+    body::before {
+      content: ''; position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px; pointer-events: none; z-index: 0;
+    }
+    .wrap { position: relative; z-index: 1; min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+    header { padding: 24px 40px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+    .logo { display: flex; align-items: baseline; gap: 10px; }
+    .logo-mark { font-family: var(--serif); font-size: 22px; color: var(--accent); font-style: italic; }
+    .logo-sub { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+    .badge { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent); border: 1px solid rgba(0,229,160,0.3); padding: 4px 10px; border-radius: 2px; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; max-width: 1200px; margin: 0 auto; width: 100%; padding: 48px 40px; align-items: start; }
+    .panel-left { padding-right: 48px; border-right: 1px solid var(--border); }
+    .section-label { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    h1 { font-family: var(--serif); font-size: 42px; line-height: 1.1; color: var(--text); margin-bottom: 12px; font-weight: 400; }
+    h1 em { color: var(--accent); font-style: italic; }
+    .subtitle { font-size: 12px; color: var(--muted); line-height: 1.7; margin-bottom: 36px; max-width: 360px; }
+    .dropzone { border: 1px dashed rgba(0,229,160,0.25); border-radius: 4px; padding: 48px 32px; text-align: center; cursor: pointer; transition: all 0.2s ease; position: relative; background: rgba(0,229,160,0.02); margin-bottom: 20px; }
+    .dropzone:hover, .dropzone.drag-over { border-color: var(--accent); background: rgba(0,229,160,0.05); }
+    .dropzone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon { width: 48px; height: 48px; margin: 0 auto 16px; border: 1px solid rgba(0,229,160,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 20px; }
+    .drop-title { font-size: 13px; color: var(--text); margin-bottom: 6px; }
+    .drop-hint { font-size: 11px; color: var(--muted); }
+    .preview-wrap { display: none; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; position: relative; }
+    .preview-wrap img { width: 100%; height: 240px; object-fit: cover; display: block; filter: grayscale(20%); }
+    .preview-label { position: absolute; top: 10px; left: 10px; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; background: rgba(0,0,0,0.7); color: var(--accent); padding: 3px 8px; border-radius: 2px; }
+    .btn { width: 100%; padding: 14px; background: var(--accent); color: #000; border: none; border-radius: 3px; font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn:hover:not(:disabled) { background: #00ffb3; transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn.loading { background: var(--surface); color: var(--accent); border: 1px solid var(--accent); }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(0,229,160,0.3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .panel-right { padding-left: 48px; min-height: 400px; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 400px; color: var(--muted); text-align: center; gap: 12px; }
+    .empty-icon { font-size: 40px; opacity: 0.3; }
+    .empty-text { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+    .result-card { display: none; animation: fadeUp 0.4s ease forwards; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    .verdict { padding: 24px; border-radius: 4px; margin-bottom: 20px; border: 1px solid; position: relative; overflow: hidden; }
+    .verdict.normal { background: rgba(0,229,160,0.05); border-color: rgba(0,229,160,0.3); }
+    .verdict.pneumonia { background: rgba(255,75,110,0.05); border-color: rgba(255,75,110,0.3); }
+    .verdict::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+    .verdict.normal::before { background: var(--accent); }
+    .verdict.pneumonia::before { background: var(--danger); }
+    .verdict-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .verdict-value { font-family: var(--serif); font-size: 36px; font-style: italic; margin-bottom: 4px; }
+    .verdict.normal .verdict-value { color: var(--accent); }
+    .verdict.pneumonia .verdict-value { color: var(--danger); }
+    .verdict-conf { font-size: 12px; color: var(--muted); }
+    .conf-bars { margin-bottom: 20px; }
+    .conf-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .conf-name { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); width: 80px; flex-shrink: 0; }
+    .conf-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1); width: 0%; }
+    .conf-fill.normal-fill { background: var(--accent); }
+    .conf-fill.pneumonia-fill { background: var(--danger); }
+    .conf-pct { font-size: 11px; color: var(--text); width: 42px; text-align: right; flex-shrink: 0; }
+    .gradcam-wrap { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 20px; }
+    .gradcam-header { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .gradcam-title { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+    .gradcam-tag { font-size: 9px; color: var(--accent2); border: 1px solid rgba(0,153,255,0.3); padding: 2px 6px; border-radius: 2px; letter-spacing: 0.1em; }
+    .gradcam-img { width: 100%; display: block; }
+    .meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .meta-item { padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
+    .meta-key { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .meta-val { font-size: 14px; color: var(--text); }
+    .error-box { display: none; padding: 16px; background: rgba(255,75,110,0.05); border: 1px solid rgba(255,75,110,0.3); border-radius: 4px; font-size: 12px; color: var(--danger); margin-top: 12px; }
+    footer { padding: 20px 40px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .footer-note { font-size: 10px; color: var(--muted); letter-spacing: 0.05em; }
+    .footer-stats { display: flex; gap: 24px; }
+    .footer-stat { text-align: center; }
+    .footer-stat-val { font-size: 13px; color: var(--accent); display: block; }
+    .footer-stat-key { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr; padding: 24px 20px; }
+      .panel-left { padding-right: 0; border-right: none; border-bottom: 1px solid var(--border); padding-bottom: 40px; margin-bottom: 40px; }
+      .panel-right { padding-left: 0; }
+      header { padding: 16px 20px; }
+      footer { padding: 16px 20px; flex-direction: column; gap: 16px; text-align: center; }
+      h1 { font-size: 32px; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <span class="logo-mark">PneumoScan</span>
+      <span class="logo-sub">AI Diagnostic Assistant</span>
+    </div>
+    <span class="badge">EfficientNetV2-S · AUC 0.97</span>
+  </header>
+  <main>
+    <div class="panel-left">
+      <div class="section-label">Input</div>
+      <h1>Chest X-Ray<br/><em>Analysis</em></h1>
+      <p class="subtitle">Upload a posteroanterior chest radiograph for automated pneumonia screening. Results include Grad-CAM visualisation for clinical interpretability.</p>
+      <div class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/jpg"/>
+        <div class="drop-icon">⊕</div>
+        <div class="drop-title">Drop X-Ray image here</div>
+        <div class="drop-hint">JPEG or PNG · Max 10MB</div>
+      </div>
+      <div class="preview-wrap" id="previewWrap">
+        <img id="previewImg" src="" alt="X-Ray preview"/>
+        <span class="preview-label">Input Image</span>
+      </div>
+      <button class="btn" id="analyseBtn" disabled onclick="analyse()">
+        <span id="btnText">Select an image first</span>
+      </button>
+      <div class="error-box" id="errorBox"></div>
+    </div>
+    <div class="panel-right">
+      <div class="section-label">Analysis</div>
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⬡</div>
+        <div class="empty-text">Awaiting image input</div>
+      </div>
+      <div class="result-card" id="resultCard">
+        <div class="verdict" id="verdict">
+          <div class="verdict-label">Diagnosis</div>
+          <div class="verdict-value" id="verdictValue">—</div>
+          <div class="verdict-conf" id="verdictConf">—</div>
+        </div>
+        <div class="conf-bars">
+          <div class="conf-row">
+            <span class="conf-name">Normal</span>
+            <div class="conf-track"><div class="conf-fill normal-fill" id="normalFill"></div></div>
+            <span class="conf-pct" id="normalPct">—</span>
+          </div>
+          <div class="conf-row">
+            <span class="conf-name">Pneumonia</span>
+            <div class="conf-track"><div class="conf-fill pneumonia-fill" id="pneumoniaFill"></div></div>
+            <span class="conf-pct" id="pneumoniaPct">—</span>
+          </div>
+        </div>
+        <div class="gradcam-wrap" id="gradcamWrap" style="display:none">
+          <div class="gradcam-header">
+            <span class="gradcam-title">Grad-CAM Activation Map</span>
+            <span class="gradcam-tag">Explainability</span>
+          </div>
+          <img class="gradcam-img" id="gradcamImg" src="" alt="Grad-CAM"/>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item"><div class="meta-key">Latency</div><div class="meta-val" id="latencyVal">—</div></div>
+          <div class="meta-item"><div class="meta-key">Device</div><div class="meta-val" id="deviceVal">—</div></div>
+          <div class="meta-item"><div class="meta-key">Threshold</div><div class="meta-val">0.50</div></div>
+          <div class="meta-item"><div class="meta-key">Model</div><div class="meta-val">EfficientV2-S</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <span class="footer-note">For research and demonstration purposes only. Not for clinical use.</span>
+    <div class="footer-stats">
+      <div class="footer-stat"><span class="footer-stat-val">0.97</span><span class="footer-stat-key">AUC-ROC</span></div>
+      <div class="footer-stat"><span class="footer-stat-val">98.97%</span><span class="footer-stat-key">Recall</span></div>
+      <div class="footer-stat"><span class="footer-stat-val">89.9%</span><span class="footer-stat-key">Accuracy</span></div>
+    </div>
+  </footer>
+</div>
+<script>
+  const API = 'http://localhost:8000';
+  let selectedFile = null;
+  const fileInput = document.getElementById('fileInput');
+  const dropzone = document.getElementById('dropzone');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const analyseBtn = document.getElementById('analyseBtn');
+  const btnText = document.getElementById('btnText');
+
+  fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+
+  function handleFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = ev => { previewImg.src = ev.target.result; previewWrap.style.display = 'block'; dropzone.style.display = 'none'; };
+    reader.readAsDataURL(file);
+    analyseBtn.disabled = false;
+    btnText.textContent = 'Analyse X-Ray';
+    document.getElementById('errorBox').style.display = 'none';
+  }
+
+  async function analyse() {
+    if (!selectedFile) return;
+    analyseBtn.disabled = true;
+    analyseBtn.classList.add('loading');
+    btnText.innerHTML = '<div class="spinner"></div>Analysing...';
+    document.getElementById('errorBox').style.display = 'none';
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    try {
+      const res = await fetch(`${API}/predict`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+      renderResult(data);
+    } catch (err) {
+      showError(err.message.includes('Failed to fetch') ? 'Cannot reach API. Make sure Docker is running on localhost:8000.' : err.message);
+    } finally {
+      analyseBtn.disabled = false;
+      analyseBtn.classList.remove('loading');
+      btnText.textContent = 'Analyse Again';
+    }
+  }
+
+  function renderResult(data) {
+    const isPneumonia = data.prediction === 'PNEUMONIA';
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('resultCard').style.display = 'block';
+    const verdict = document.getElementById('verdict');
+    verdict.className = `verdict ${isPneumonia ? 'pneumonia' : 'normal'}`;
+    document.getElementById('verdictValue').textContent = data.prediction;
+    document.getElementById('verdictConf').textContent = `${(data.confidence * 100).toFixed(2)}% confidence`;
+    setTimeout(() => {
+      document.getElementById('normalFill').style.width = `${(data.normal_prob * 100).toFixed(1)}%`;
+      document.getElementById('pneumoniaFill').style.width = `${(data.pneumonia_prob * 100).toFixed(1)}%`;
+    }, 50);
+    document.getElementById('normalPct').textContent = `${(data.normal_prob * 100).toFixed(1)}%`;
+    document.getElementById('pneumoniaPct').textContent = `${(data.pneumonia_prob * 100).toFixed(1)}%`;
+    if (data.gradcam_png_b64) {
+      document.getElementById('gradcamImg').src = `data:image/png;base64,${data.gradcam_png_b64}`;
+      document.getElementById('gradcamWrap').style.display = 'block';
+    }
+    document.getElementById('latencyVal').textContent = `${data.latency_ms.toFixed(0)} ms`;
+    fetch(`${API}/health`).then(r => r.json()).then(h => { document.getElementById('deviceVal').textContent = h.device || 'cpu'; }).catch(() => {});
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('errorBox');
+    box.textContent = `⚠ ${msg}`;
+    box.style.display = 'block';
+  }
+</script>
+</body>
+</html>

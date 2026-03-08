@@ -1,0 +1,7 @@
+data/
+outputs/best_model.pth
+__pycache__/
+*.pyc
+.DS_Store
+*.egg-info
+.env
